@@ -36,13 +36,13 @@ if uploaded_file:
         "pvt_tcg_0260", "pvt_tcg_0331", "pvt_tcg_0124", "pvt_tcg_0035"]
 
     details = ["En Cours-Identification", "Identifie", "Identifie Photo", ]
-        # Nettoyage / Préparation
+       
+    # Nettoyage / Préparation
     df = df.rename(columns={'MSISDN': 'TOTAL_SIM'})
     df = df.rename(columns={'ACCUEIL_VENDEUR': 'PVT'})
     df = df.rename(columns={'LOGIN_VENDEUR': 'LOGIN'})
     df = df.rename(columns={'AGENCE_VENDEUR': 'DRV'})
         
-
     def clean_cols(df):
         df['DRV'] = df['DRV'].astype(str).str.strip().str.upper()
         #df['PVT'] = df['PVT'].astype(str).str.strip().str.upper()
@@ -68,9 +68,6 @@ if uploaded_file:
     # Trier les données pour regrouper visuellement
     df_summary = df_summary.sort_values(['DRV', 'PVT'])
 
-    # Pour masquer les répétitions (laisser vide sauf première occurrence)
-    #df_summary['DRV'] = df_summary['DRV'].mask(df_summary['DRV'].duplicated())
-    #df_summary['PVT'] = df_summary['PVT'].mask(df_summary['PVT'].duplicated())
 
     df_summary["DRV"] = df_summary["DRV"].replace({ 
     "DV-DRV2_DIRECTION REGIONALE DES VENTES DAKAR 2": "DR2",
@@ -116,9 +113,6 @@ if uploaded_file:
     "DV-DRVE_DIRECTION REGIONALE DES VENTES EST": "DR EST"
         })
 
-
-    #------------------------------------------------------------------------------------------------
-    #Pour fusionner les lignes vides
 
     # 1. Créer un fichier Excel temporaire avec pandas
     temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
@@ -169,9 +163,6 @@ if uploaded_file:
 
         # Extraire toutes les colonnes de type SEMxx
         sem_cols = [col for col in df_old.columns if re.match(r"SEM\d+", str(col))]
-
-        
-
 
         if sem_cols:
             derniers_num_semaines = [int(col[3:]) for col in sem_cols]
@@ -254,86 +245,3 @@ if uploaded_file:
             file_name="historique_ventes.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-
-
-
-
-
-    # 8. Générer le tableau de paiement mensuel
-    st.header("💰 Générateur de Paiement Mensuel")
-
-    # Extraire toutes les colonnes de type SEMxx
-    #sem_cols = [col for col in df_old.columns if re.match(r"SEM\d+", str(col))]
-
-    if st.button("🧮 Générer Paiement à partir de l'historique"):
-        if len(sem_cols) < 4:
-            st.warning("❌ Il faut au moins 4 colonnes SEMxx pour générer un paiement mensuel.")
-        else:
-            semaines_a_utiliser = st.multiselect("🗓️ Sélectionner les 4 semaines concernées :", options=sem_cols, default=sem_cols[-4:])
-
-            if len(semaines_a_utiliser) == 4:
-                df_paiement = df_old.copy()
-                df_paiement['TOTAL_MAI'] = df_paiement[semaines_a_utiliser].sum(axis=1)
-                df_paiement['OBJECTIF'] = 240
-                df_paiement["TAUX D'ATTEINTE"] = (df_paiement['TOTAL_MAI'] / df_paiement['OBJECTIF']).apply(lambda x: f"{round(x*100)}%")
-                df_paiement['SI 100% ATTEINT'] = 100000
-                df_paiement['PAIEMENT'] = df_paiement['TOTAL_MAI'].apply(lambda x: 100000 if x >= 240 else round((x/240)*100000))
-                df_paiement['PAIEMENT CHAUFFEUR'] = 150000
-                df_paiement['PAIEMENT CHAUFFEUR'] = df_paiement['PAIEMENT CHAUFFEUR'].mask(df_paiement['DRV'].duplicated())
-                df_paiement['TOTAL SIM+CHAUFFEUR'] = None
-                
-                # 👉 Ajouter les lignes de total après chaque DRV
-                df_with_totals = pd.DataFrame(columns=df_paiement.columns)
-
-                for drv, group in df_paiement.groupby('DRV'):
-                    df_with_totals = pd.concat([df_with_totals, group], ignore_index=True)
-
-                    total_paiement = group['PAIEMENT'].sum()
-                    total_general = group['PAIEMENT'].sum() + group['PAIEMENT CHAUFFEUR'].sum()
-                    row_total = {
-                        'DRV': f"{drv}",
-                        'PVT': "TOTAL PVT",
-                        'PAIEMENT': total_paiement ,
-                        'TOTAL GENERAL SIM+CHAUFFEUR': total_general
-                    }
-                    df_with_totals = pd.concat([df_with_totals, pd.DataFrame([row_total])], ignore_index=True)
-
-
-                # === Générer tableau Paiement par PVT ===
-
-                # 1. Grouper par DRV et PVT pour obtenir le total des paiements
-                df_par_pvt = df_paiement.groupby(['DRV', 'PVT'])['PAIEMENT'].sum().reset_index()
-                df_par_pvt = df_par_pvt.rename(columns={'PAIEMENT': 'MONTANT'})
-                df_par_pvt['MONTANT'] = df_par_pvt['MONTANT'] + 150000
-
-                # 2. Ajouter GAIN PVT (5%) et TOTAL GENERAL
-                df_par_pvt['GAIN PVT (5%)'] = df_par_pvt['MONTANT'] * 0.05
-                df_par_pvt['TOTAL GENERAL'] = df_par_pvt['MONTANT'] + df_par_pvt['GAIN PVT (5%)']
-
-                # 1. Agréger les ventes par DRV et par SEMxx
-                df_DR = df_old.groupby('DRV')[semaines_a_utiliser].sum().reset_index()
-
-                # 2. Ajouter les colonnes TOTAL, OBJ, TR (%)
-                df_DR['TOT'] = df_DR[semaines_a_utiliser].sum(axis=1)
-                df_DR['OBJ'] = 920
-                df_DR['TR (%)'] = (df_DR['TOT'] / df_DR['OBJ'] * 100).round(1).astype(str) + '%'
-
-                # Affichage du tableau simplifié
-                cols_affichage = ['DRV', 'PVT', 'PRENOM_VENDEUR', 'NOM_VENDEUR', 'TOTAL_MAI', 'OBJECTIF', "TAUX D'ATTEINTE", 'SI 100% ATTEINT', 'PAIEMENT', 'PAIEMENT CHAUFFEUR', 'TOTAL GENERAL SIM+CHAUFFEUR']
-                st.dataframe(df_with_totals[cols_affichage])
-
-                # Export Excel
-                buffer_paiement = BytesIO()
-                with pd.ExcelWriter(buffer_paiement, engine='openpyxl') as writer:
-                    df_with_totals[cols_affichage].to_excel(writer, sheet_name='DETAILS PAIEMENT JUIN VTO', index=False)
-                    df_par_pvt.to_excel(writer, sheet_name='PAIEMENT PAR PVT', index=False)
-                    df_DR.to_excel(writer, sheet_name='Bilan des réalisations SIM', index=False)
-                buffer_paiement.seek(0)
-
-                st.download_button(
-                    label="📥 Télécharger le fichier de Paiement Mensuel",
-                    data=buffer_paiement,
-                    file_name="paiement_mensuel_vto.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )

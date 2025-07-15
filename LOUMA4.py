@@ -28,8 +28,7 @@ if uploaded_file:
     
     # 2. Ajouter les colonnes TOTAL, OBJ, TR (%)
     df['TOT'] = df[["M1", "M2", "M3", "M4"]].sum(axis=1)
-    df['OBJ'] = 3800
-    df.loc[0, "OBJ"] = 2880
+    
     
 
     
